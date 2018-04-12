@@ -1,0 +1,217 @@
+<?php
+
+/**
+ * @author Semyon Dragunov <sam.dragunov@gmail.com>
+ * https://github.com/SemyonDragunov
+ */
+
+/**
+ * Implements hook_install().
+ */
+function sl7_news_install() {
+  $t = get_t();
+
+  _sl7_news_create_taxonomy();
+  _sl7_news_create_node_type();
+
+  // Добавляем права.
+  if ($role_manager = user_role_load_by_name('manager')) {
+    $editor_permissions = array(
+      'create sl7_news content' => TRUE,
+      'edit own sl7_news content' => TRUE,
+      'delete own sl7_news content' => TRUE,
+    );
+    user_role_change_permissions($role_manager->rid, $editor_permissions);
+  }
+
+  // Set path breadcrumbs settings.
+  variable_set('path_breadcrumbs_home_link_title', 'Главная');
+
+  // Set pathauto pattern.
+  variable_set('pathauto_node_sl7_news_pattern', 'news/[node:title]-[node:nid]');
+  variable_set('pathauto_taxonomy_term_sl7_news_rubric_pattern', 'rubric/[term:name]');
+}
+
+function _sl7_news_create_taxonomy() {
+  $vocab = (object) array(
+    'name' => 'Рубрики новостей',
+    'description' => 'Категории новостей.',
+    'machine_name' => 'sl7_news_rubric',
+  );
+  if (!taxonomy_vocabulary_machine_name_load($vocab->machine_name)) {
+    taxonomy_vocabulary_save($vocab);
+  }
+}
+
+function _sl7_news_create_node_type() {
+  node_types_rebuild();
+  $types = node_type_get_types();
+  node_add_body_field($types['sl7_news'], 'Статья');
+  variable_set("comment_{$types['sl7_news']->type}", 1);
+  variable_set("node_preview_{$types['sl7_news']->type}", 0);
+  variable_set("node_options_{$types['sl7_news']->type}", array('status'));
+  variable_set("node_submitted_{$types['sl7_news']->type}", 0);
+
+  $fields = array(
+    array(
+      'field_name' => 'sl7_news_image',
+      'type' => 'image',
+      'cardinality' => 1,
+      'module' => 'image',
+      'locked' => TRUE,
+      'settings' => array(
+        'uri_scheme' => 'public',
+        'default_image' => 0,
+      ),
+      'foreign keys' => array(
+        'fid' => array(
+          'columns' => array(
+            'fid' => 'fid',
+          ),
+          'table' => 'file_managed',
+        ),
+      ),
+      'indexes' => array(
+        'fid' => array(
+          0 => 'fid',
+        ),
+      ),
+    ),
+    array(
+      'field_name' => 'sl7_news_rubric',
+      'type' => 'taxonomy_term_reference',
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'locked' => TRUE,
+      'settings' => array(
+        'allowed_values' => array(
+          array(
+            'vocabulary' => 'sl7_news_rubric',
+            'parent' => 0
+          ),
+        ),
+      ),
+    ),
+  );
+  foreach ($fields as $field) {
+    $exists = db_query("SELECT id FROM {field_config} WHERE field_name=:field_name", array(':field_name' => $field['field_name']))->fetchField();
+    if (!$exists) {
+      field_create_field($field);
+    }
+  }
+
+  $instances = array(
+    array(
+      'field_name' => 'sl7_news_image',
+      'entity_type' => 'node',
+      'bundle' => 'sl7_news',
+      'required' => TRUE,
+      'label' => 'Изображение',
+      'settings' => array(
+        'max_filesize' => 1024*1024*2,
+        'min_resolution' => '500x400',
+        'file_extensions' => 'png gif jpg jpeg',
+        'file_directory' => 'sl7_news',
+      ),
+      'widget' => array(
+        'type' => 'image_image',
+        'module' => 'image',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'image',
+          'settings' => array(
+            'image_style' => 'sl7_news_teaser'
+          ),
+          'weight' => -2,
+        ),
+        'teaser' => array(
+          'label' => 'hidden',
+          'type' => 'image',
+          'settings' => array(
+            'image_style' => 'sl7_news_teaser'
+          ),
+        ),
+      ),
+    ),
+    array(
+      'field_name' => 'sl7_news_rubric',
+      'description' => 'Если хотите разделить новости структурно, то укажите рубрику. <a href="/admin/structure/taxonomy/sl7_news_rubric">Управление рубриками.</a>',
+      'entity_type' => 'node',
+      'label' => 'Рубрика',
+      'bundle' => 'sl7_news',
+      'widget' => array(
+        'type' => 'options_select',
+      ),
+      'display' => array(
+        'default' => array(
+          'label' => 'hidden',
+          'type' => 'taxonomy_term_reference_link',
+          'module' => 'taxonomy',
+          'weight' => -1,
+        ),
+        'teaser' => array(
+          'label' => 'hidden',
+          'type' => 'taxonomy_term_reference_link',
+          'module' => 'taxonomy',
+        )
+      ),
+    ),
+  );
+  foreach ($instances as $instance) {
+    $exists = db_query("SELECT id FROM {field_config_instance} WHERE field_name=:field_name AND entity_type=:entity_type AND bundle=:bundle", array(':field_name' => $instance['field_name'], ':entity_type' => $instance['entity_type'], ':bundle' => $instance['bundle']))->fetchField();
+    if (!$exists) {
+      field_create_instance($instance);
+    }
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function sl7_news_uninstall() {
+  // Удаление нод sl7_news.
+  $node_type = 'sl7_news';
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => $node_type));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  node_delete_multiple($nids);
+  node_type_delete($node_type);
+
+  // Удаление полей нод sl7_news.
+  field_attach_delete_bundle('node', 'sl7_news');
+  db_delete('field_config_instance')->condition('entity_type', 'node')->condition('bundle', 'sl7_news')->execute();
+  db_delete('field_config_instance')
+    ->condition('field_name', 'comment_body')
+    ->condition('bundle', 'comment_node_sl7_news')
+    ->execute();
+  db_delete('field_config')->condition('field_name', 'sl7_news_%', 'LIKE')->execute();
+
+  // Удаление таксономии.
+  $vocab = taxonomy_vocabulary_machine_name_load('sl7_news_rubric');
+  taxonomy_vocabulary_delete($vocab->vid);
+
+  // Удаление views.
+  $views = array(
+    'sl7_news',
+  );
+  foreach ($views as $name) {
+    if ($view = views_get_view($name)) {
+      $view->delete();
+    }
+  }
+
+  // Удаление переменных.
+  $result = db_select('variable', 'v')
+    ->fields('v', array('name'))
+    ->condition('name', 'sl7_news_%', 'LIKE')
+    ->execute();
+  foreach ($result as $row) {
+    variable_del($row->name);
+  }
+
+  field_purge_batch(1000);
+}

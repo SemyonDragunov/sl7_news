@@ -1,0 +1,19 @@
+name = Новости
+description = Размещение новостей на сайте.
+package = SL7
+version = 7.x-1.0
+core = 7.x
+
+configure = admin/control-panel/news
+
+stylesheets[all][] = css/sl7_news.css
+
+dependencies[] = sl7_control_panel
+dependencies[] = taxonomy
+dependencies[] = pathauto
+dependencies[] = path_breadcrumbs
+dependencies[] = transliteration
+dependencies[] = views
+dependencies[] = contextual
+dependencies[] = entity
+dependencies[] = entity:entity_token

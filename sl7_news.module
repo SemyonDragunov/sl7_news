@@ -1,0 +1,367 @@
+<?php
+
+/**
+ * @author Semyon Dragunov <sam.dragunov@gmail.com>
+ * https://github.com/SemyonDragunov
+ */
+
+define('SL7_NEWS_ADMIN_PATH', SL7_CONTROL_PANEL_ADMIN_PATH . '/news');
+
+/**
+ * Implement hook_menu().
+ */
+function sl7_news_menu() {
+
+  $item[SL7_NEWS_ADMIN_PATH] = array(
+    'title' => 'Новости',
+    'position' => 'left',
+    'page callback' => 'system_admin_menu_block_page',
+    'access callback' => 'sl7_control_panel_access',
+    'access arguments' => array('view'),
+    'file path' => drupal_get_path('module', 'system'),
+    'file' => 'system.admin.inc',
+  );
+
+  $item[SL7_NEWS_ADMIN_PATH . '/add/sl7-news'] = array(
+    'title' => 'Добавить новость',
+    'description' => 'Добавить новость на сайт.',
+    'page callback' => 'drupal_goto',
+    'page arguments' => array('/node/add/sl7-news'),
+    'access arguments' => array('create sl7_news content'),
+    'weight' => -10,
+  );
+
+  $item[SL7_NEWS_ADMIN_PATH . '/rubric'] = array(
+    'title' => 'Рубрики',
+    'description' => 'Управление новостными рубриками.',
+    'page callback' => 'drupal_goto',
+    'page arguments' => array('admin/structure/taxonomy/sl7_news_rubric'),
+    'access arguments' => array('administer taxonomy'),
+    'weight' => -8,
+  );
+
+  return $item;
+}
+
+/**
+ * Implements hook_node_info()
+ */
+function sl7_news_node_info() {
+  return array(
+    'sl7_news' => array(
+      'name' => 'Новость',
+      'base' => 'sl7_news',
+      'description' => 'Новость на сайте.',
+      'has_title' => TRUE,
+      'title_label' => 'Заголовок',
+      'locked' => TRUE,
+    )
+  );
+}
+
+/**
+ * Implement hook_form()
+ */
+function sl7_news_form($node, $form_state) {
+  return node_content_form($node, $form_state);
+}
+
+/**
+ * Implement hook_theme().
+ */
+function sl7_news_theme() {
+  $items = array(
+    'sl7_news__teaser' => array(
+      'variables' => array('element' => null),
+      'template' => 'templates/sl7-news--teaser'
+    ),
+  );
+
+  return $items;
+}
+
+/**
+ * Implement hook_preprocess_node().
+ */
+function sl7_news_preprocess_node(&$vars) {
+  if ($vars['view_mode'] == 'teaser' && $vars['node']->type == 'sl7_news') {
+    $vars['theme_hook_suggestions'][] = 'sl7_news__teaser';
+    $vars['classes_array'][] = 'teaser';
+  }
+
+  if ($vars['view_mode'] == 'full' && $vars['node']->type == 'sl7_news') {
+    $vars['classes_array'][] = 'full';
+  }
+
+  if ($vars['node']->type == 'sl7_news') {
+    $vars['classes_array'][] = 'sl7-news';
+  }
+}
+
+/**
+ * Implement hook_preprocess_page().
+ */
+function sl7_news_preprocess_page(&$vars) {
+  if (arg(0) == 'taxonomy' && arg(1) == 'term' && is_numeric(arg(2)) && arg(3) != 'edit') {
+    $term = taxonomy_term_load(arg(2));
+    $vocab = taxonomy_vocabulary_load($term->vid);
+
+    if ($vocab->machine_name == 'sl7_news_rubric') {
+      $views_sl7_news = array(
+        'views_sl7_news' => array(
+          '#prefix' => '<div id="sl7-news-taxonomy">',
+          '#suffix' => '</div>',
+          '#markup' => views_embed_view('sl7_news',  'taxonomy_page', arg(2)),
+          '#weight' => 2,
+        ),
+      );
+      $vars['page']['content']['system_main'] = array_merge($views_sl7_news, $vars['page']['content']['system_main']);
+
+      unset($vars['page']['content']['system_main']['nodes']);
+    }
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function sl7_news_block_info() {
+  $blocks['front_page'] = array(
+    'info' => 'Новости',
+    'status' => 1,
+    'region' => 'front',
+    'weight' => 7,
+    'visibility' => BLOCK_VISIBILITY_NOTLISTED,
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function sl7_news_block_configure($delta = '') {
+  $form = array();
+
+  if ($delta == 'front_page') {
+    $form['view_all'] = array(
+      '#type' => 'checkbox',
+      '#title' => 'Кнопка "Все новости"',
+      '#default_value' => variable_get('sl7_news_view_all', 1),
+    );
+  }
+
+  return $form;
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function sl7_news_block_save($delta = '', $edit = array()) {
+  if ($delta == 'front_page') {
+    variable_set('sl7_news_view_all', $edit['view_all']);
+  }
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function sl7_news_block_view($delta = '') {
+  $block = array();
+  $type = "sl7_news";
+  $nodes = node_load_multiple(array(), array('type' => $type));
+
+  if ($delta == 'front_page' && count($nodes) > 0) {
+    $block['subject'] = 'Новости';
+    $block['content'] = array(
+      '#markup' => views_embed_view('sl7_news', 'front_page'),
+    );
+
+    if (variable_get('sl7_news_view_all', 1)) {
+      $output =   '<div class="content-center">';
+      $output .=    '<a href="/news" class="button">Все новости</a>';
+      $output .=  '</div>';
+
+      $block['content']['#markup'] .= $output;
+    }
+  }
+
+  return $block;
+}
+
+function sl7_news_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'sl7_news') . '/views',
+    'template path' => drupal_get_path('module', 'sl7_news') . '/templates',
+  );
+}
+
+/**
+ * Implements hook_views_default_views().
+ **/
+function sl7_news_views_default_views() {
+  $files = file_scan_directory(drupal_get_path('module', 'sl7_news'). '/views', '/.view.inc/');
+  foreach ($files as $filepath => $file) {
+    require $filepath;
+    if (isset($view)) {
+      $views[$view->name] = $view;
+    }
+  }
+
+  if ($views) {
+    return $views;
+  }
+}
+
+/**
+ * Implementation of hook_image_default_styles().
+ */
+function sl7_news_image_default_styles() {
+  $styles = array();
+
+  $styles['sl7_news_teaser'] = array(
+    'label' => 'Новости - анонс',
+    'effects' => array(
+      array(
+        'name' => 'image_scale_and_crop',
+        'data' => array('width' => 500, 'height' => 400),
+      ),
+    ),
+  );
+
+  return $styles;
+}
+
+/**
+ * Implementation of hook_ctools_plugin_api().
+ */
+function sl7_news_ctools_plugin_api($owner, $api) {
+  if ($owner == 'path_breadcrumbs' && $api == 'path_breadcrumbs') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implement hook_path_breadcrumbs_settings_info().
+ */
+function sl7_news_path_breadcrumbs_settings_info() {
+  $export = array();
+
+  $path_breadcrumb = new stdClass();
+  $path_breadcrumb->api_version = 1;
+  $path_breadcrumb->machine_name = 'sl7_news_front';
+  $path_breadcrumb->name = 'Новости - главная';
+  $path_breadcrumb->path = 'news';
+  $path_breadcrumb->data = array(
+    'titles' => array(
+      0 => 'Новости',
+    ),
+    'paths' => array(
+      0 => '<none>',
+    ),
+    'home' => 1,
+    'translatable' => 0,
+    'arguments' => array(),
+    'access' => array(),
+  );
+  $path_breadcrumb->weight = 0;
+  $export['sl7_news_front'] = $path_breadcrumb;
+
+  $path_breadcrumb = new stdClass();
+  $path_breadcrumb->api_version = 1;
+  $path_breadcrumb->machine_name = 'sl7_news_news';
+  $path_breadcrumb->name = 'Новости - новость';
+  $path_breadcrumb->path = 'node/%node';
+  $path_breadcrumb->data = array(
+    'titles' => array(
+      0 => 'Новости',
+      1 => '%node:title',
+    ),
+    'paths' => array(
+      0 => 'news',
+      1 => '<none>',
+    ),
+    'home' => 1,
+    'translatable' => 0,
+    'arguments' => array(
+      'node' => array(
+        'position' => 1,
+        'argument' => 'entity_id:node',
+        'settings' => array(
+          'identifier' => 'Материал: ID',
+        ),
+      ),
+    ),
+    'access' => array(
+      'plugins' => array(
+        0 => array(
+          'name' => 'node_type',
+          'settings' => array(
+            'type' => array(
+              'sl7_news' => 'sl7_news',
+            ),
+          ),
+          'context' => 'node',
+          'not' => FALSE,
+        ),
+      ),
+      'logic' => 'and',
+    ),
+  );
+  $path_breadcrumb->weight = 0;
+  $export['sl7_news_news'] = $path_breadcrumb;
+
+  $path_breadcrumb = new stdClass();
+  $path_breadcrumb->api_version = 1;
+  $path_breadcrumb->machine_name = 'sl7_news_rubric';
+  $path_breadcrumb->name = 'Новости - рубрики';
+  $path_breadcrumb->path = 'taxonomy/term/%tid';
+  $path_breadcrumb->data = array(
+    'titles' => array(
+      0 => 'Новости',
+      1 => '%tid:pb-join:name',
+    ),
+    'paths' => array(
+      0 => 'news',
+      1 => '%tid:pb-join:url',
+    ),
+    'home' => 1,
+    'translatable' => 0,
+    'arguments' => array(
+      'tid' => array(
+        'position' => 2,
+        'argument' => 'term',
+        'settings' => array(
+          'identifier' => 'Taxonomy term: ID',
+          'input_form' => 'tid',
+          'vids' => array(
+            20 => 0,
+            2 => 0,
+          ),
+          'breadcrumb' => 1,
+          'transform' => 0,
+        ),
+      ),
+    ),
+    'access' => array(
+      'plugins' => array(
+        0 => array(
+          'name' => 'term_vocabulary',
+          'settings' => array(
+            'machine_name' => array(
+              'sl7_news_rubric' => 'sl7_news_rubric',
+            ),
+          ),
+          'context' => 'tid',
+          'not' => FALSE,
+        ),
+      ),
+      'logic' => 'and',
+    ),
+  );
+  $path_breadcrumb->weight = 0;
+  $export['sl7_news_rubric'] = $path_breadcrumb;
+
+  return $export;
+}

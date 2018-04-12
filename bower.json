@@ -1,0 +1,25 @@
+{
+  "name": "sl7_news",
+  "version": "1.0",
+  "description": "News",
+  "main": "",
+  "moduleType": [],
+  "keywords": [
+    "sl7"
+  ],
+  "authors": [
+    "Semyon Dragunov <sam.dragunov@gmail.com>"
+  ],
+  "license": "Apache License 2.0",
+  "homepage": "https://github.com/SemyonDragunov/sl7_news",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "susy": "~2.2.6"
+  }
+}
